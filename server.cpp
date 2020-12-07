@@ -41,11 +41,6 @@ void SendWebSockAccept(int client)
 
   std::string server_request(buffer);
 
-  std::cout << std::endl
-            << std::endl
-            << server_request << std::endl
-            << std::endl;
-
   send(client, "HTTP/1.1 101 Switching Protocols\r\n", 34, 0);
   send(client, "Upgrade: websocket\r\n", 20, 0);
   send(client, "Connection: Upgrade\r\n", 21, 0);
@@ -259,11 +254,10 @@ int main()
 
       if (FD_ISSET(current_fd, &client_set))
       {
-        // Clear the buffer
-        buffer[0] = '\0';
-
         // Read the message and check number of bytes read
         bytes_read = recv(current_fd, buffer, BUFF_SIZE, 0);
+
+        buffer[bytes_read] = '\0';
 
         // If bytes read is 1 recv failed
         if (bytes_read == -1)
@@ -275,8 +269,6 @@ int main()
         // recv returns 0 if the client has gracefully disconnected.
         else if (bytes_read == 0)
         {
-          std::cout << "Client " << i << " has disconnected." << std::endl;
-
           close(current_fd);
           client_fd[i] = 0;
         }
@@ -285,19 +277,24 @@ int main()
         {
           std::string message = DecodeWebSocket(buffer, bytes_read);
 
-          std::cout << message << std::endl;
-
-          for (int j = 0; j < MAX_CLIENTS; j++)
+          if (message.find("/name"))
           {
-            if (i != j)
+            std::string tmp_message = "";
+            for(int j = 5; j < message.size(); j++)
             {
-              current_fd = client_fd[j];
-              std::string new_message = EncodeWebSocket((char *)message.c_str(), message.size());
-              send(current_fd, new_message.c_str(), new_message.size(), 0);
+              tmp_message += message[j];
             }
+            message = tmp_message + " has joined the chat.";
           }
 
-          buffer[0] = '\0';
+          std::string new_message = EncodeWebSocket((char *)message.c_str(), message.size());
+          for (int j = 0; j < MAX_CLIENTS; j++)
+          {
+            if (client_fd[j] > 0 && i != j)
+            {
+              send(client_fd[j], new_message.c_str(), new_message.size(), 0);
+            }
+          }
         }
       }
     }
