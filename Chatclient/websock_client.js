@@ -15,12 +15,14 @@ function submit() {
     if (input.length > 0) {
         if (name == "") {
             name = input;
-            socket.send("/name:" + name);
+            socket.send("\\name " + name);
             document.getElementById("usermsg").placeholder = "";
             document.getElementById("menu").innerHTML = "<p>Welcome, <b>" + name + "</b></p>" + document.getElementById("menu").innerHTML;
             document.getElementById("chatbox").innerHTML = chat;
+        } else if (input == "\\clear") {
+            document.getElementById("chatbox").innerHTML = "";
         } else {
-            socket.send(name + ": " + input);
+            socket.send(input);
             document.getElementById("chatbox").innerHTML += "<p>" + name + ": " + input + "</p>";
         }
     }
@@ -34,9 +36,7 @@ $('#usermsg').on('keypress', function(event) {
 
 function exit() {
     document.getElementById("chatbox").innerHTML += "<p>You have disconnected.</p>";
-
-    // socket.send(name + " has left the chat.");
-    // socket.send("/exit");
+    socket.send("\\exit");
     socket.close();
 }
 

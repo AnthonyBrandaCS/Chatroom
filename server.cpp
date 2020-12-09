@@ -175,7 +175,7 @@ int main()
   }
 
   fd_set client_set;
-  int client_fd[MAX_CLIENTS] = {0};
+  client clients[MAX_CLIENTS] = {0};
   int biggest_fd;
 
   int server_activity;
@@ -197,7 +197,7 @@ int main()
     // Add existing clients back to socket set
     for (i = 0; i < MAX_CLIENTS; i++)
     {
-      current_fd = client_fd[i];
+      current_fd = clients[i].fd;
 
       // If current socket is valid, add to list
       if (current_fd > 0)
@@ -237,9 +237,9 @@ int main()
         // Add new socket to array of sockets
         for (i = 0; i < MAX_CLIENTS; i++)
         {
-          if (client_fd[i] == 0)
+          if (clients[i].fd == 0)
           {
-            client_fd[i] = current_fd;
+            clients[i].fd = current_fd;
             SendWebSockAccept(current_fd);
 
             break;
@@ -250,7 +250,7 @@ int main()
 
     for (i = 0; i < MAX_CLIENTS; i++)
     {
-      current_fd = client_fd[i];
+      current_fd = clients[i].fd;
 
       if (FD_ISSET(current_fd, &client_set))
       {
@@ -270,29 +270,66 @@ int main()
         else if (bytes_read == 0)
         {
           close(current_fd);
-          client_fd[i] = 0;
+          clients[i].fd = 0;
         }
         // Handle the recv succeed case
         else
         {
           std::string message = DecodeWebSocket(buffer, bytes_read);
 
-          if (message.find("/name"))
+          if (message.find("\\name") != std::string::npos || message.find("\\NAME") != std::string::npos)
           {
-            std::string tmp_message = "";
-            for(int j = 5; j < message.size(); j++)
+            if (message[5] == ' ' && message[0] == '\\' && message.size() > 6)
             {
-              tmp_message += message[j];
-            }
-            message = tmp_message + " has joined the chat.";
-          }
+              std::cout << "NAME command found." << std::endl;
+              std::string name = "";
+              for (int j = 6; j < message.size(); j++)
+              {
+                name += message[j];
+              }
+              clients[i].name = name;
+              std::string name_msg = "Your name has been set to: " + name;
+              name_msg = EncodeWebSocket((char *)name_msg.c_str(), name_msg.size());
+              send(clients[i].fd, name_msg.c_str(), name_msg.size(), 0);
 
+              name_msg = name + " has joined the chat.";
+              name_msg = EncodeWebSocket((char *)name_msg.c_str(), name_msg.size());
+              for (int j = 0; j < MAX_CLIENTS; j++)
+              {
+                if (clients[j].fd > 0 && i != j)
+                {
+                  send(clients[j].fd, name_msg.c_str(), name_msg.size(), 0);
+                }
+              }
+            }
+            continue;
+          }
+          else if (message.find("\\exit") != std::string::npos || message.find("\\EXIT") != std::string::npos)
+          {
+            std::cout << "EXIT command found." << std::endl;
+            std::string exit_msg = clients[i].name + " has left the chat.";
+            exit_msg = EncodeWebSocket((char *)exit_msg.c_str(), exit_msg.size());
+
+            for (int j = 0; j < MAX_CLIENTS; j++)
+            {
+              if (clients[j].fd > 0 && i != j)
+              {
+                send(clients[j].fd, exit_msg.c_str(), exit_msg.size(), 0);
+              }
+            }
+
+            close(clients[i].fd);
+              clients[i].fd = 0;
+              clients[i].name = "";
+            continue;
+          }
+          message = clients[i].name + ": " + message;
           std::string new_message = EncodeWebSocket((char *)message.c_str(), message.size());
           for (int j = 0; j < MAX_CLIENTS; j++)
           {
-            if (client_fd[j] > 0 && i != j)
+            if (clients[j].fd > 0 && i != j)
             {
-              send(client_fd[j], new_message.c_str(), new_message.size(), 0);
+              send(clients[j].fd, new_message.c_str(), new_message.size(), 0);
             }
           }
         }

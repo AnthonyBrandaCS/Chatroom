@@ -22,4 +22,9 @@ std::string DecodeWebSocket(const char buffer[], const size_t length);
 
 bool unit_test();
 
+struct client {
+    int fd;
+    std::string name;
+};
+
 #endif
