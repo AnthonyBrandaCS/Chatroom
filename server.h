@@ -18,11 +18,16 @@ std::string getSockKey(std::string server_request);
 
 std::string getSockAccept(std::string client_key);
 
+void SendWebSockAccept(int client);
+
 std::string DecodeWebSocket(const char buffer[], const size_t length);
+
+std::string EncodeWebSocket(char message[], size_t length);
 
 bool unit_test();
 
-struct client {
+struct client
+{
     int fd;
     std::string name;
 };

@@ -1,341 +1,221 @@
-// g++ server.cpp server_resources.cpp server_test.cpp -o server -lcrypto -lz -ldl -static-libgcc
-
 #include "server.h"
+
 #include <string.h>
-#include <bitset>
 
 #define PORT 8000
 #define MAX_CLIENTS 30
 #define BUFF_SIZE 1024
+#define DEFAULT_NAME "Someone"
 
-std::string getSockKey(std::string server_request)
+void handleMessage(char buffer[], int bytes_read, client *clients, int idx)
 {
-  const std::string Sec_WebSocket_Key = "Sec-WebSocket-Key: ";
-  size_t header_index = server_request.find(Sec_WebSocket_Key);
-  header_index += Sec_WebSocket_Key.size();
+    std::string message = DecodeWebSocket(buffer, bytes_read);
 
-  std::string acceptance = "";
+    std::cout << message << std::endl;
 
-  for (int i = header_index; i < header_index + 24; i++)
-  {
-    acceptance += server_request[i];
-  }
+    if (message.find("\\name") != std::string::npos || message.find("\\NAME") != std::string::npos)
+    {
+        if (message[5] == ' ' && message[0] == '\\' && message.size() > 6)
+        {
+            std::cout << "NAME command found." << std::endl;
+            std::string name = "";
+            for (int i = 6; i < message.size(); i++)
+            {
+                name += message[i];
+            }
 
-  return acceptance;
-}
+            std::string name_msg = "\\name " + name;
+            name_msg = EncodeWebSocket((char *)name_msg.c_str(), name_msg.size());
+            send(clients[idx].fd, name_msg.c_str(), name_msg.size(), 0);
 
-std::string getSockAccept(std::string client_key)
-{
-  std::string working_key = client_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+            if (clients[idx].name != DEFAULT_NAME)
+            {
+                name_msg = clients[idx].name + " has changed their name to " + name;
+                name_msg = EncodeWebSocket((char *)name_msg.c_str(), name_msg.size());
 
-  unsigned char buffer[SHA_DIGEST_LENGTH] = {0};
-  SHA1((const unsigned char *)working_key.c_str(), working_key.size(), buffer);
+                for (int i = 0; i < MAX_CLIENTS; i++)
+                {
+                    if (clients[i].fd > 0 && idx != i)
+                    {
+                        send(clients[i].fd, name_msg.c_str(), name_msg.size(), 0);
+                    }
+                }
+            }
+            else
+            {
+                name_msg = name + " has joined the chat.";
+                name_msg = EncodeWebSocket((char *)name_msg.c_str(), name_msg.size());
+                for (int i = 0; i < MAX_CLIENTS; i++)
+                {
+                    if (clients[i].fd > 0 && idx != i)
+                    {
+                        send(clients[i].fd, name_msg.c_str(), name_msg.size(), 0);
+                    }
+                }
+            }
 
-  return base64_encode(buffer, SHA_DIGEST_LENGTH);
-}
+            clients[idx].name = name;
+        }
+    }
+    else if (message.find("\\exit") != std::string::npos || message.find("\\EXIT") != std::string::npos)
+    {
+        std::cout << "EXIT command found." << std::endl;
+        std::string exit_msg = clients[idx].name + " has left the chat.";
+        exit_msg = EncodeWebSocket((char *)exit_msg.c_str(), exit_msg.size());
 
-void SendWebSockAccept(int client)
-{
-  char buffer[1024] = {0};
-  recv(client, buffer, 1024, 0);
+        for (int i = 0; i < MAX_CLIENTS; i++)
+        {
+            if (clients[i].fd > 0 && idx != i)
+            {
+                send(clients[i].fd, exit_msg.c_str(), exit_msg.size(), 0);
+            }
+        }
 
-  std::string server_request(buffer);
-
-  send(client, "HTTP/1.1 101 Switching Protocols\r\n", 34, 0);
-  send(client, "Upgrade: websocket\r\n", 20, 0);
-  send(client, "Connection: Upgrade\r\n", 21, 0);
-
-  std::string socket_accept = "Sec-WebSocket-Accept: " + getSockAccept(getSockKey(server_request));
-  socket_accept += "\r\n\r\n";
-
-  send(client, socket_accept.c_str(), socket_accept.size(), 0);
-}
-
-std::string DecodeWebSocket(const char buffer[], const size_t length)
-{
-
-  std::vector<std::bitset<8>> data;
-
-  for (int i = 0; i < length; i++)
-  {
-    data.push_back(std::bitset<8>(buffer[i]));
-  }
-
-  data[0].set(4, 0);
-  data[0].set(5, 0);
-  data[0].set(6, 0);
-  data[0].set(7, 0);
-  uint8_t opcode = static_cast<uint8_t>(data[0].to_ulong());
-
-  switch (opcode)
-  {
-  case 1:
-    // TODO:
-    // Indicate that it is a text message
-    break;
-  default:
-    // TODO:
-    // Cover other cases
-    break;
-  }
-
-  bool mask = data[1].test(7);
-  data[1].set(7, 0);
-
-  if (!mask)
-  {
-    std::cout << "Discard data, mask not set." << std::endl;
-    return "";
-  }
-
-  uint64_t msg_length = static_cast<uint8_t>(data[1].to_ulong());
-
-  int start_index = 2;
-  if (msg_length == 126)
-  {
-    // TODO:
-    // This should also be unit tested.
-    std::cout << "Attempting to set 16 bit length." << std::endl;
-    std::bitset<16> tmp(data[2].to_string() + data[3].to_string());
-    msg_length = static_cast<uint64_t>(tmp.to_ullong());
-    start_index = 4;
-  }
-  else if (msg_length == 127)
-  {
-    // TODO:
-    // This should also be unit tested.
-    std::cout << "Attempting to set 64 bit length." << std::endl;
-    std::bitset<64> tmp(data[2].to_string() + data[3].to_string() + data[4].to_string() + data[5].to_string() + data[6].to_string() + data[7].to_string() + data[8].to_string() + data[9].to_string());
-    msg_length = static_cast<uint64_t>(tmp.to_ullong());
-    start_index = 10;
-  }
-
-  std::vector<std::bitset<8>> mask_bits;
-  mask_bits.push_back(data[start_index]);
-  mask_bits.push_back(data[start_index + 1]);
-  mask_bits.push_back(data[start_index + 2]);
-  mask_bits.push_back(data[start_index + 3]);
-  start_index += 4;
-
-  std::string decoded_message = "";
-  for (int i = start_index, j = 0; i < length; i++, j++)
-  {
-    decoded_message += (int)(data[i].to_ulong() ^ mask_bits[j % 4].to_ulong());
-  }
-
-  return decoded_message;
-}
-
-std::string EncodeWebSocket(char message[], size_t length)
-{
-
-  std::string encoded_message;
-  encoded_message += (char)0b10000001;
-
-  std::bitset<8> size(length);
-  encoded_message += static_cast<char>(size.to_ulong());
-
-  for (int i = 0; i < length; i++)
-  {
-    std::bitset<8> current(message[i]);
-
-    encoded_message += (int)current.to_ulong();
-  }
-
-  return encoded_message;
+        close(clients[idx].fd);
+        clients[idx].fd = 0;
+        clients[idx].name = "";
+    }
+    else
+    {
+        message = clients[idx].name + ": " + message;
+        std::string new_message = EncodeWebSocket((char *)message.c_str(), message.size());
+        for (int i = 0; i < MAX_CLIENTS; i++)
+        {
+            send(clients[i].fd, new_message.c_str(), new_message.size(), 0);
+        }
+    }
 }
 
 int main()
 {
 
-  if (!unit_test())
-  {
-    return -1;
-  }
-
-  std::cout << std::endl
-            << std::endl
-            << "Unit tests passed. Starting the server..." << std::endl
-            << std::endl;
-
-  int server = socket(AF_INET, SOCK_STREAM, 0);
-  sockaddr_in addr;
-  addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = INADDR_ANY;
-  addr.sin_port = htons(PORT);
-  socklen_t addr_len = sizeof(addr);
-
-  if (server == -1 ||
-      bind(server, (sockaddr *)&addr, addr_len) ||
-      listen(server, SOMAXCONN))
-  {
-    std::cerr << "Failed to open socket." << std::endl;
-    close(server);
-    return -1;
-  }
-
-  fd_set client_set;
-  client clients[MAX_CLIENTS] = {0};
-  int biggest_fd;
-
-  int server_activity;
-  int current_fd;
-  int bytes_read;
-
-  char buffer[BUFF_SIZE] = {0};
-  int i;
-
-  while (true)
-  {
-    // Clear the socket set
-    FD_ZERO(&client_set);
-
-    // Add server socket to set
-    FD_SET(server, &client_set);
-    biggest_fd = server;
-
-    // Add existing clients back to socket set
-    for (i = 0; i < MAX_CLIENTS; i++)
+    if (!unit_test())
     {
-      current_fd = clients[i].fd;
-
-      // If current socket is valid, add to list
-      if (current_fd > 0)
-      {
-        FD_SET(current_fd, &client_set);
-      }
-
-      // Update biggest_fd if necessary
-      if (current_fd > biggest_fd)
-      {
-        biggest_fd = current_fd;
-      }
+        return -1;
     }
 
-    // Wait for activity on one of the clients
-    // Timeout is NULL so wait indefinitely
-    server_activity = select(biggest_fd + 1, &client_set, NULL, NULL, NULL);
+    std::cout << std::endl
+              << std::endl
+              << "Unit tests passed. Starting the server..." << std::endl
+              << std::endl;
 
-    if (server_activity < 0 && errno != EINTR)
+    int server = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(PORT);
+    socklen_t addr_len = sizeof(addr);
+
+    if (server == -1 ||
+        bind(server, (sockaddr *)&addr, addr_len) ||
+        listen(server, SOMAXCONN))
     {
-      std::cerr << "Select has failed: " << strerror(errno) << std::endl;
-      std::cout << "Trying to continue..." << std::endl;
+        std::cerr << "Failed to open socket." << std::endl;
+        close(server);
+        return -1;
     }
 
-    // If server socket is set, then a new client is joining
-    if (FD_ISSET(server, &client_set))
+    fd_set client_set;
+    client clients[MAX_CLIENTS] = {0};
+    int biggest_fd;
+
+    int server_activity;
+    int bytes_read;
+
+    char buffer[BUFF_SIZE] = {0};
+
+    while (true)
     {
-      current_fd = accept(server, (sockaddr *)&addr, &addr_len);
+        // Clear the socket set
+        FD_ZERO(&client_set);
 
-      if (current_fd == -1)
-      {
-        std::cerr << "Failed to accept new client: " << strerror(errno) << std::endl;
-        std::cout << "Trying to continue..." << std::endl;
-      }
-      else
-      {
-        // Add new socket to array of sockets
-        for (i = 0; i < MAX_CLIENTS; i++)
+        // Add server socket to set
+        FD_SET(server, &client_set);
+        biggest_fd = server;
+
+        // Add existing clients back to socket set
+        for (int i = 0; i < MAX_CLIENTS; i++)
         {
-          if (clients[i].fd == 0)
-          {
-            clients[i].fd = current_fd;
-            SendWebSockAccept(current_fd);
-
-            break;
-          }
-        }
-      }
-    }
-
-    for (i = 0; i < MAX_CLIENTS; i++)
-    {
-      current_fd = clients[i].fd;
-
-      if (FD_ISSET(current_fd, &client_set))
-      {
-        // Read the message and check number of bytes read
-        bytes_read = recv(current_fd, buffer, BUFF_SIZE, 0);
-
-        buffer[bytes_read] = '\0';
-
-        // If bytes read is 1 recv failed
-        if (bytes_read == -1)
-        {
-          std::cerr << "Failed to receive message from client " << current_fd << ": " << strerror(errno) << std::endl;
-          // TODO: How should I handle this? Probably just kick the client.
-          // Should I try to send a message to the client when they get kicked here?
-        }
-        // recv returns 0 if the client has gracefully disconnected.
-        else if (bytes_read == 0)
-        {
-          close(current_fd);
-          clients[i].fd = 0;
-        }
-        // Handle the recv succeed case
-        else
-        {
-          std::string message = DecodeWebSocket(buffer, bytes_read);
-
-          if (message.find("\\name") != std::string::npos || message.find("\\NAME") != std::string::npos)
-          {
-            if (message[5] == ' ' && message[0] == '\\' && message.size() > 6)
+            // If current socket is valid, add to list
+            if (clients[i].fd > 0)
             {
-              std::cout << "NAME command found." << std::endl;
-              std::string name = "";
-              for (int j = 6; j < message.size(); j++)
-              {
-                name += message[j];
-              }
-              clients[i].name = name;
-              std::string name_msg = "Your name has been set to: " + name;
-              name_msg = EncodeWebSocket((char *)name_msg.c_str(), name_msg.size());
-              send(clients[i].fd, name_msg.c_str(), name_msg.size(), 0);
+                FD_SET(clients[i].fd, &client_set);
+            }
 
-              name_msg = name + " has joined the chat.";
-              name_msg = EncodeWebSocket((char *)name_msg.c_str(), name_msg.size());
-              for (int j = 0; j < MAX_CLIENTS; j++)
-              {
-                if (clients[j].fd > 0 && i != j)
+            // Update biggest_fd if necessary
+            if (clients[i].fd > biggest_fd)
+            {
+                biggest_fd = clients[i].fd;
+            }
+        }
+
+        // Wait for activity on one of the clients
+        // Timeout is NULL so wait indefinitely
+        server_activity = select(biggest_fd + 1, &client_set, NULL, NULL, NULL);
+
+        if (server_activity < 0 && errno != EINTR)
+        {
+            std::cerr << "Select has failed: " << strerror(errno) << std::endl;
+            std::cout << "Trying to continue..." << std::endl;
+        }
+
+        // If server socket is set, then a new client is joining
+        if (FD_ISSET(server, &client_set))
+        {
+            int new_fd = accept(server, (sockaddr *)&addr, &addr_len);
+
+            if (new_fd == -1)
+            {
+                std::cerr << "Failed to accept new client: " << strerror(errno) << std::endl;
+                std::cout << "Trying to continue..." << std::endl;
+            }
+            else
+            {
+                // Add new socket to array of sockets
+                for (int i = 0; i < MAX_CLIENTS; i++)
                 {
-                  send(clients[j].fd, name_msg.c_str(), name_msg.size(), 0);
+                    if (clients[i].fd == 0)
+                    {
+                        clients[i].fd = new_fd;
+                        clients[i].name = DEFAULT_NAME;
+                        SendWebSockAccept(new_fd);
+
+                        break;
+                    }
                 }
-              }
             }
-            continue;
-          }
-          else if (message.find("\\exit") != std::string::npos || message.find("\\EXIT") != std::string::npos)
-          {
-            std::cout << "EXIT command found." << std::endl;
-            std::string exit_msg = clients[i].name + " has left the chat.";
-            exit_msg = EncodeWebSocket((char *)exit_msg.c_str(), exit_msg.size());
-
-            for (int j = 0; j < MAX_CLIENTS; j++)
-            {
-              if (clients[j].fd > 0 && i != j)
-              {
-                send(clients[j].fd, exit_msg.c_str(), exit_msg.size(), 0);
-              }
-            }
-
-            close(clients[i].fd);
-              clients[i].fd = 0;
-              clients[i].name = "";
-            continue;
-          }
-          message = clients[i].name + ": " + message;
-          std::string new_message = EncodeWebSocket((char *)message.c_str(), message.size());
-          for (int j = 0; j < MAX_CLIENTS; j++)
-          {
-            if (clients[j].fd > 0 && i != j)
-            {
-              send(clients[j].fd, new_message.c_str(), new_message.size(), 0);
-            }
-          }
         }
-      }
-    }
-  }
 
-  return 0;
+        for (int i = 0; i < MAX_CLIENTS; i++)
+        {
+            if (FD_ISSET(clients[i].fd, &client_set))
+            {
+                // Read the message and check number of bytes read
+                bytes_read = recv(clients[i].fd, buffer, BUFF_SIZE, 0);
+
+                buffer[bytes_read] = '\0';
+
+                // If bytes read is 1 recv failed
+                if (bytes_read == -1)
+                {
+                    std::cerr << "Failed to receive message from client " << i << ": " << strerror(errno) << std::endl;
+                    // TODO: How should I handle this? Probably just kick the client.
+                    // Should I try to send a message to the client when they get kicked here?
+                }
+                // recv returns 0 if the client has gracefully disconnected.
+                else if (bytes_read == 0)
+                {
+                    close(clients[i].fd);
+                    clients[i].fd = 0;
+                }
+                // Handle the recv succeed case
+                else
+                {
+                    handleMessage(buffer, bytes_read, clients, i);
+                }
+            }
+        }
+    }
+
+    return 0;
 }

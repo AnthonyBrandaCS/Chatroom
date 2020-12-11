@@ -1,19 +1,19 @@
 body {
-    font: 12px arial;
+    font: 3.5vw arial;
     color: #222;
     text-align: center;
-    padding: 35px;
+    margin: 0;
+    padding: 0;
+    background: #EBF4FB;
 }
 
-form,
-p,
-span {
+p {
     margin: 0;
     padding: 0;
 }
 
 input {
-    font: 12px arial;
+    font: 3.5vw arial;
 }
 
 a {
@@ -23,44 +23,29 @@ a {
 
 a:hover {
     text-decoration: underline;
-}
-
-#wrapper,
-#loginform {
-    margin: 0 auto;
-    padding-bottom: 25px;
-    background: #EBF4FB;
-    width: 504px;
-    border: 1px solid #ACD8F0;
-}
-
-#loginform {
-    padding-top: 18px;
-}
-
-#loginform p {
-    margin: 5px;
+    cursor: pointer;
 }
 
 #chatbox {
     text-align: left;
     margin: 0 auto;
-    margin-bottom: 25px;
-    padding: 10px;
     background: #fff;
-    height: 270px;
-    width: 430px;
+    height: 60vh;
+    width: 90vw;
+    margin-top: 5vh;
+    margin-bottom: 5vh;
     border: 1px solid #ACD8F0;
     overflow: auto;
 }
 
 #usermsg {
-    width: 395px;
+    width: 74vw;
     border: 1px solid #ACD8F0;
+    margin-right: 1vw;
 }
 
 #submit {
-    width: 60px;
+    width: 15vw;
 }
 
 #menu {
@@ -69,8 +54,4 @@ a:hover {
 
 #exit {
     float: right;
-}
-
-#exit:hover {
-    cursor: pointer;
 }

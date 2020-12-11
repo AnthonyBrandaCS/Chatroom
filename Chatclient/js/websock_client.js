@@ -17,13 +17,17 @@ function submit() {
             name = input;
             socket.send("\\name " + name);
             document.getElementById("usermsg").placeholder = "";
-            document.getElementById("menu").innerHTML = "<p>Welcome, <b>" + name + "</b></p>" + document.getElementById("menu").innerHTML;
+            document.getElementById("menu").innerHTML = "<p>Welcome, <b id=\"name\">" + name + "</b></p>" + document.getElementById("menu").innerHTML;
             document.getElementById("chatbox").innerHTML = chat;
         } else if (input == "\\clear") {
             document.getElementById("chatbox").innerHTML = "";
+        } else if (input == "\\help") {
+            document.getElementById("chatbox").innerHTML += "<br>" +
+                "<p>\\name <NAME> - Changes your name.</p>" +
+                "<p>\\clear - clears the chatbox.</p>" +
+                "<br>";
         } else {
             socket.send(input);
-            document.getElementById("chatbox").innerHTML += "<p>" + name + ": " + input + "</p>";
         }
     }
 }
@@ -41,9 +45,26 @@ function exit() {
 }
 
 socket.addEventListener('message', function(event) {
-    if (name == "")
+    var scroll = false;
+
+    if (document.getElementById("chatbox").scrollTop == document.getElementById("chatbox").scrollHeight - document.getElementById("chatbox").clientHeight) {
+        scroll = true;
+    }
+
+    if (name == "") {
         chat += "<p>" + event.data + "</p>";
-    document.getElementById("chatbox").innerHTML += "<p>" + event.data + "</p>";
+    }
+    if (event.data.includes("\\name ")) {
+        name = event.data.replace("\\name ", "");
+        document.getElementById("name").innerHTML = name;
+        document.getElementById("chatbox").innerHTML += "<p>Your name has been changed to " + name + "</p>";
+    } else {
+        document.getElementById("chatbox").innerHTML += "<p>" + event.data + "</p>";
+    }
+
+    if (scroll == true) {
+        document.getElementById("chatbox").scrollTop = document.getElementById("chatbox").scrollHeight;
+    }
 });
 
 window.onbeforeunload = exit;
